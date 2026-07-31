@@ -51,9 +51,9 @@ jobs:
         path: |
           kernel_source
           ~/.ccache
-        key: ${{ runner.os }}-kernel-mt6989-clang13-v2-${{ hashFiles('**/Makefile', 'kernel/**') }}
+        key: ${{ runner.os }}-kernel-mt6989-clang13-v3-${{ hashFiles('**/Makefile', 'kernel/**') }}
         restore-keys: |
-          ${{ runner.os }}-kernel-mt6989-clang13-v2-
+          ${{ runner.os }}-kernel-mt6989-clang13-v3-
 
     - name: Download Kernel Source (tar.gz)
       run: |
@@ -76,7 +76,8 @@ jobs:
         grep -q 'source "drivers/hack/Kconfig"' drivers/Kconfig || echo 'source "drivers/hack/Kconfig"' >> drivers/Kconfig
         grep -q 'obj-$(CONFIG_KERNEL_HACK) += hack/' drivers/Makefile || echo 'obj-$(CONFIG_KERNEL_HACK) += hack/' >> drivers/Makefile
 
-        # 创建缺失的 Kconfig 文件（OPPO 特有驱动）
+        # 解决 OPPO 缺失 Kconfig 问题：先删除可能的文件，再创建目录和空的 Kconfig
+        rm -rf drivers/soc/oplus/oplus_resctrl
         mkdir -p drivers/soc/oplus/oplus_resctrl
         touch drivers/soc/oplus/oplus_resctrl/Kconfig
 
