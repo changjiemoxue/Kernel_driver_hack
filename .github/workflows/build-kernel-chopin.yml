@@ -15,7 +15,7 @@ jobs:
     - name: Checkout Module Source
       uses: actions/checkout@v4
 
-    - name: Install necessary packages (include clang/lld)
+    - name: Install necessary packages
       run: |
         apt-get update
         export DEBIAN_FRONTEND=noninteractive
@@ -28,8 +28,8 @@ jobs:
         policycoreutils minicom libxml-sax-base-perl libxml-simple-perl bc libc6-dev-i386 \
         lib32ncurses5-dev libx11-dev lib32z-dev libgl1-mesa-dev xsltproc unzip device-tree-compiler \
         python3 python2 wget xz-utils clang lld
-        # 安装 Clang 和 LLD（Ubuntu 20.04 默认 clang-10 可能不够，但可尝试）
-        # 如果版本不足，可以额外添加 clang-13（但需要额外源），这里先使用默认 clang
+        # ★ 加这一行，安装 ARM64 交叉链接器
+        apt-get install -y binutils-aarch64-linux-gnu
 
     - name: Cache Dependencies
       uses: actions/cache@v4
@@ -38,9 +38,9 @@ jobs:
         path: |
           kernel_source
           ~/.ccache
-        key: ${{ runner.os }}-kernel-mt6989-${{ hashFiles('**/Makefile', 'kernel/**') }}
+        key: ${{ runner.os }}-kernel-mt6989-v3-${{ hashFiles('**/Makefile', 'kernel/**') }}
         restore-keys: |
-          ${{ runner.os }}-kernel-mt6989-
+          ${{ runner.os }}-kernel-mt6989-v3-
 
     - name: Download Kernel Source (tar.gz)
       run: |
@@ -63,27 +63,19 @@ jobs:
     - name: Prepare Kernel Source for Module Build
       working-directory: ./kernel_source
       run: |
-        # Reset module directory and sync latest code
         rm -rf drivers/hack
         mkdir -p drivers/hack
         cp -a ../kernel/. drivers/hack/
-
-        # Add module to Kconfig and Makefile (idempotent)
         grep -q 'source "drivers/hack/Kconfig"' drivers/Kconfig || echo 'source "drivers/hack/Kconfig"' >> drivers/Kconfig
         grep -q 'obj-$(CONFIG_KERNEL_HACK) += hack/' drivers/Makefile || echo 'obj-$(CONFIG_KERNEL_HACK) += hack/' >> drivers/Makefile
-
-        # Configure the kernel with GKI defconfig
         make O=out ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- gki_defconfig
-
-        # Enable the module config
         scripts/config --file out/.config --enable CONFIG_KERNEL_HACK
 
     - name: Build Kernel Module
       working-directory: ./kernel_source
       run: |
-        make -j$(nproc --all) O=out ARCH=arm64 CC="ccache clang" CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- LD=ld.lld modules_prepare
-        
-        make -j$(nproc --all) O=out ARCH=arm64 CC="ccache clang" CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- LD=ld.lld M=drivers/hack
+        make -j$(nproc --all) O=out ARCH=arm64 CC="ccache clang" CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- modules_prepare
+        make -j$(nproc --all) O=out ARCH=arm64 CC="ccache clang" CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- M=drivers/hack
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
