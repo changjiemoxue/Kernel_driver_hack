@@ -3,8 +3,6 @@ name: Build Kernel Module
 on:
   push:
     branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
   workflow_dispatch:
 
 jobs:
@@ -17,14 +15,21 @@ jobs:
     - name: Checkout Module Source
       uses: actions/checkout@v4
 
-    - name: Install necessary packages
+    - name: Install necessary packages (include clang/lld)
       run: |
         apt-get update
         export DEBIAN_FRONTEND=noninteractive
         ln -fs /usr/share/zoneinfo/America/New_York /etc/localtime
-        apt-get install -y tzdata lsb-release
+        apt-get install -y tzdata
         dpkg-reconfigure --frontend noninteractive tzdata
-        apt-get install -y git ccache automake flex lzop bison gperf build-essential zip curl zlib1g-dev g++-multilib libxml2-utils bzip2 libbz2-dev libbz2-1.0 libghc-bzlib-dev squashfs-tools pngcrush schedtool dpkg-dev liblz4-tool make optipng maven libssl-dev pwgen libswitch-perl policycoreutils minicom libxml-sax-base-perl libxml-simple-perl bc libc6-dev-i386 lib32ncurses5-dev libx11-dev lib32z-dev libgl1-mesa-dev xsltproc unzip device-tree-compiler python3 python2
+        apt-get install -y git ccache automake flex lzop bison gperf build-essential zip curl zlib1g-dev \
+        g++-multilib libxml2-utils bzip2 libbz2-dev libbz2-1.0 libghc-bzlib-dev squashfs-tools \
+        pngcrush schedtool dpkg-dev liblz4-tool make optipng maven libssl-dev pwgen libswitch-perl \
+        policycoreutils minicom libxml-sax-base-perl libxml-simple-perl bc libc6-dev-i386 \
+        lib32ncurses5-dev libx11-dev lib32z-dev libgl1-mesa-dev xsltproc unzip device-tree-compiler \
+        python3 python2 wget xz-utils clang lld
+        # 安装 Clang 和 LLD（Ubuntu 20.04 默认 clang-10 可能不够，但可尝试）
+        # 如果版本不足，可以额外添加 clang-13（但需要额外源），这里先使用默认 clang
 
     - name: Cache Dependencies
       uses: actions/cache@v4
@@ -32,33 +37,25 @@ jobs:
       with:
         path: |
           kernel_source
-          clang
           ~/.ccache
         key: ${{ runner.os }}-kernel-mt6989-${{ hashFiles('**/Makefile', 'kernel/**') }}
         restore-keys: |
           ${{ runner.os }}-kernel-mt6989-
 
-    - name: Ensure Kernel Source
+    - name: Download Kernel Source (tar.gz)
       run: |
         if [ -d kernel_source/.git ]; then
           echo "kernel_source already prepared"
         else
           rm -rf kernel_source
-          git clone --depth=1 https://github.com/oppo-source/android_kernel_oppo_mt6989 -b oppo_mt6989_u_14.0.1_oppo_find_x7 kernel_source
-        fi
-
-    - name: Ensure Toolchain
-      run: |
-        if [ -d clang/.git ]; then
-          echo "clang already prepared"
-        else
-          rm -rf clang
-          git clone --depth=1 https://github.com/rogxo/proton-clang -b clang-13 clang
+          wget -q https://github.com/oppo-source/android_kernel_oppo_mt6989/archive/refs/heads/oppo_mt6989_u_14.0.1_oppo_find_x7.tar.gz -O kernel.tar.gz
+          tar xf kernel.tar.gz
+          mv android_kernel_oppo_mt6989-* kernel_source
+          rm kernel.tar.gz
         fi
 
     - name: Set up Environment
       run: |
-        echo "$(pwd)/clang/bin" >> $GITHUB_PATH
         echo "CCACHE_DIR=$(pwd)/.ccache" >> $GITHUB_ENV
         echo "USE_CCACHE=1" >> $GITHUB_ENV
         ccache -M 5G
