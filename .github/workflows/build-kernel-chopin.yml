@@ -34,9 +34,9 @@ jobs:
           kernel_source
           clang
           ~/.ccache
-        key: ${{ runner.os }}-kernel-chopin-${{ hashFiles('**/Makefile', 'kernel/**') }}
+        key: ${{ runner.os }}-kernel-mt6989-${{ hashFiles('**/Makefile', 'kernel/**') }}
         restore-keys: |
-          ${{ runner.os }}-kernel-chopin-
+          ${{ runner.os }}-kernel-mt6989-
 
     - name: Ensure Kernel Source
       run: |
@@ -44,7 +44,7 @@ jobs:
           echo "kernel_source already prepared"
         else
           rm -rf kernel_source
-          git clone --depth=1 https://github.com/SMlc666/android_kernel_chopin_android_T -b T kernel_source
+          git clone --depth=1 https://github.com/oppo-source/android_kernel_oppo_mt6989 -b oppo_mt6989_u_14.0.1_oppo_find kernel_source
         fi
 
     - name: Ensure Toolchain
@@ -75,8 +75,8 @@ jobs:
         grep -q 'source "drivers/hack/Kconfig"' drivers/Kconfig || echo 'source "drivers/hack/Kconfig"' >> drivers/Kconfig
         grep -q 'obj-$(CONFIG_KERNEL_HACK) += hack/' drivers/Makefile || echo 'obj-$(CONFIG_KERNEL_HACK) += hack/' >> drivers/Makefile
 
-        # Configure the kernel
-        make O=out ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- chopin_user_defconfig
+        # Configure the kernel with GKI defconfig
+        make O=out ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- gki_defconfig
 
         # Enable the module config
         scripts/config --file out/.config --enable CONFIG_KERNEL_HACK
