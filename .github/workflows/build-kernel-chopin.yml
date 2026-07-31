@@ -51,9 +51,9 @@ jobs:
         path: |
           kernel_source
           ~/.ccache
-        key: ${{ runner.os }}-kernel-mt6989-auto-${{ hashFiles('**/Makefile', 'kernel/**') }}
+        key: ${{ runner.os }}-kernel-mt6989-final-${{ hashFiles('**/Makefile', 'kernel/**') }}
         restore-keys: |
-          ${{ runner.os }}-kernel-mt6989-auto-
+          ${{ runner.os }}-kernel-mt6989-final-
 
     - name: Download Kernel Source (tar.gz)
       run: |
@@ -67,38 +67,34 @@ jobs:
           rm kernel.tar.gz
         fi
 
+    - name: Fix all missing Kconfig files
+      working-directory: ./kernel_source
+      run: |
+        echo "Scanning for source'd Kconfig files..."
+        # 找出所有被 source 引用的路径，并创建空文件
+        find . -name 'Kconfig*' -type f -exec grep -H 'source ' {} \; | \
+          sed -n 's/.*source "\([^"]*\)".*/\1/p' | sort -u | while read f; do
+            if [ ! -f "$f" ]; then
+              echo "Creating empty file: $f"
+              mkdir -p "$(dirname "$f")"
+              touch "$f"
+            fi
+          done
+        echo "All Kconfig files prepared."
+
     - name: Prepare Kernel Source for Module Build
       working-directory: ./kernel_source
       run: |
+        # 清理可能存在的坏 out 目录
+        rm -rf out
         rm -rf drivers/hack
         mkdir -p drivers/hack
         cp -a ../kernel/. drivers/hack/
         grep -q 'source "drivers/hack/Kconfig"' drivers/Kconfig || echo 'source "drivers/hack/Kconfig"' >> drivers/Kconfig
         grep -q 'obj-$(CONFIG_KERNEL_HACK) += hack/' drivers/Makefile || echo 'obj-$(CONFIG_KERNEL_HACK) += hack/' >> drivers/Makefile
 
-        # === 自动修复缺失的 Kconfig 文件 ===
-        # 反复运行 gki_defconfig，每次捕获 can't open file 错误并创建空文件，直到成功
-        for i in {1..50}; do
-          echo "Attempt $i: make gki_defconfig"
-          if make O=out ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- LD=ld.lld gki_defconfig 2>&1 | tee /tmp/config.log; then
-            echo "Success!"
-            break
-          else
-            # 提取缺失的文件路径
-            MISSING=$(grep -oP "can't open file \"\K[^\"]+" /tmp/config.log || true)
-            if [ -z "$MISSING" ]; then
-              echo "Error other than missing Kconfig, please check log"
-              exit 1
-            fi
-            for f in $MISSING; do
-              echo "Creating empty file: $f"
-              mkdir -p "$(dirname "$f")"
-              touch "$f"
-            done
-          fi
-        done
-
-        # 启用我们的驱动配置
+        # 配置内核（现在不会再有 Kconfig 缺失）
+        make O=out ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- LD=ld.lld gki_defconfig
         scripts/config --file out/.config --enable CONFIG_KERNEL_HACK
 
     - name: Build Kernel Module
