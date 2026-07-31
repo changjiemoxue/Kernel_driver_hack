@@ -51,9 +51,9 @@ jobs:
         path: |
           kernel_source
           ~/.ccache
-        key: ${{ runner.os }}-kernel-mt6989-clang13-v3-${{ hashFiles('**/Makefile', 'kernel/**') }}
+        key: ${{ runner.os }}-kernel-mt6989-auto-${{ hashFiles('**/Makefile', 'kernel/**') }}
         restore-keys: |
-          ${{ runner.os }}-kernel-mt6989-clang13-v3-
+          ${{ runner.os }}-kernel-mt6989-auto-
 
     - name: Download Kernel Source (tar.gz)
       run: |
@@ -76,12 +76,29 @@ jobs:
         grep -q 'source "drivers/hack/Kconfig"' drivers/Kconfig || echo 'source "drivers/hack/Kconfig"' >> drivers/Kconfig
         grep -q 'obj-$(CONFIG_KERNEL_HACK) += hack/' drivers/Makefile || echo 'obj-$(CONFIG_KERNEL_HACK) += hack/' >> drivers/Makefile
 
-        # 解决 OPPO 缺失 Kconfig 问题：先删除可能的文件，再创建目录和空的 Kconfig
-        rm -rf drivers/soc/oplus/oplus_resctrl
-        mkdir -p drivers/soc/oplus/oplus_resctrl
-        touch drivers/soc/oplus/oplus_resctrl/Kconfig
+        # === 自动修复缺失的 Kconfig 文件 ===
+        # 反复运行 gki_defconfig，每次捕获 can't open file 错误并创建空文件，直到成功
+        for i in {1..50}; do
+          echo "Attempt $i: make gki_defconfig"
+          if make O=out ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- LD=ld.lld gki_defconfig 2>&1 | tee /tmp/config.log; then
+            echo "Success!"
+            break
+          else
+            # 提取缺失的文件路径
+            MISSING=$(grep -oP "can't open file \"\K[^\"]+" /tmp/config.log || true)
+            if [ -z "$MISSING" ]; then
+              echo "Error other than missing Kconfig, please check log"
+              exit 1
+            fi
+            for f in $MISSING; do
+              echo "Creating empty file: $f"
+              mkdir -p "$(dirname "$f")"
+              touch "$f"
+            done
+          fi
+        done
 
-        make O=out ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- LD=ld.lld gki_defconfig
+        # 启用我们的驱动配置
         scripts/config --file out/.config --enable CONFIG_KERNEL_HACK
 
     - name: Build Kernel Module
