@@ -44,7 +44,7 @@ jobs:
           echo "kernel_source already prepared"
         else
           rm -rf kernel_source
-          git clone --depth=1 https://github.com/oppo-source/android_kernel_oppo_mt6989 -b oppo_mt6989_u_14.0.1_oppo_find kernel_source
+          git clone --depth=1 https://github.com/oppo-source/android_kernel_oppo_mt6989 -b oppo_mt6989_u_14.0.1_oppo_find_x7 kernel_source
         fi
 
     - name: Ensure Toolchain
@@ -53,7 +53,7 @@ jobs:
           echo "clang already prepared"
         else
           rm -rf clang
-          git clone --depth=1 https://gitlab.com/LeCmnGend/proton-clang.git -b clang-13 clang
+          git clone --depth=1 https://github.com/rogxo/proton-clang -b clang-13 clang
         fi
 
     - name: Set up Environment
