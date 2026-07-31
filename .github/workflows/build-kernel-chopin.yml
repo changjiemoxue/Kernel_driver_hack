@@ -22,16 +22,13 @@ jobs:
         ln -fs /usr/share/zoneinfo/America/New_York /etc/localtime
         apt-get install -y tzdata
         dpkg-reconfigure --frontend noninteractive tzdata
-        # 基础依赖
         apt-get install -y git ccache automake flex lzop bison gperf build-essential zip curl zlib1g-dev \
         g++-multilib libxml2-utils bzip2 libbz2-dev libbz2-1.0 libghc-bzlib-dev squashfs-tools \
         pngcrush schedtool dpkg-dev liblz4-tool make optipng maven libssl-dev pwgen libswitch-perl \
         policycoreutils minicom libxml-sax-base-perl libxml-simple-perl bc libc6-dev-i386 \
         lib32ncurses5-dev libx11-dev lib32z-dev libgl1-mesa-dev xsltproc unzip device-tree-compiler \
         python3 python2 wget xz-utils
-        # ARM64 交叉链接器
         apt-get install -y binutils-aarch64-linux-gnu
-        # 添加 LLVM 13 源并安装 Clang 13 + LLD 13
         apt-get install -y gnupg2 lsb-release
         wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -
         echo "deb http://apt.llvm.org/focal/ llvm-toolchain-focal-13 main" >> /etc/apt/sources.list
@@ -40,7 +37,6 @@ jobs:
 
     - name: Set up Environment
       run: |
-        # 让系统默认使用 clang-13 / lld-13
         update-alternatives --install /usr/bin/clang clang /usr/bin/clang-13 100
         update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-13 100
         update-alternatives --install /usr/bin/ld.lld ld.lld /usr/bin/lld-13 100
@@ -55,9 +51,9 @@ jobs:
         path: |
           kernel_source
           ~/.ccache
-        key: ${{ runner.os }}-kernel-mt6989-clang13-${{ hashFiles('**/Makefile', 'kernel/**') }}
+        key: ${{ runner.os }}-kernel-mt6989-clang13-v2-${{ hashFiles('**/Makefile', 'kernel/**') }}
         restore-keys: |
-          ${{ runner.os }}-kernel-mt6989-clang13-
+          ${{ runner.os }}-kernel-mt6989-clang13-v2-
 
     - name: Download Kernel Source (tar.gz)
       run: |
@@ -79,7 +75,11 @@ jobs:
         cp -a ../kernel/. drivers/hack/
         grep -q 'source "drivers/hack/Kconfig"' drivers/Kconfig || echo 'source "drivers/hack/Kconfig"' >> drivers/Kconfig
         grep -q 'obj-$(CONFIG_KERNEL_HACK) += hack/' drivers/Makefile || echo 'obj-$(CONFIG_KERNEL_HACK) += hack/' >> drivers/Makefile
-        # 使用 clang-13 和 lld-13（环境已设置，直接写 clang / ld.lld 即可）
+
+        # 创建缺失的 Kconfig 文件（OPPO 特有驱动）
+        mkdir -p drivers/soc/oplus/oplus_resctrl
+        touch drivers/soc/oplus/oplus_resctrl/Kconfig
+
         make O=out ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- LD=ld.lld gki_defconfig
         scripts/config --file out/.config --enable CONFIG_KERNEL_HACK
 
