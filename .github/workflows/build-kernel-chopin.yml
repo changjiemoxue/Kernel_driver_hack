@@ -15,21 +15,38 @@ jobs:
     - name: Checkout Module Source
       uses: actions/checkout@v4
 
-    - name: Install necessary packages
+    - name: Install necessary packages & Clang 13
       run: |
         apt-get update
         export DEBIAN_FRONTEND=noninteractive
         ln -fs /usr/share/zoneinfo/America/New_York /etc/localtime
         apt-get install -y tzdata
         dpkg-reconfigure --frontend noninteractive tzdata
+        # 基础依赖
         apt-get install -y git ccache automake flex lzop bison gperf build-essential zip curl zlib1g-dev \
         g++-multilib libxml2-utils bzip2 libbz2-dev libbz2-1.0 libghc-bzlib-dev squashfs-tools \
         pngcrush schedtool dpkg-dev liblz4-tool make optipng maven libssl-dev pwgen libswitch-perl \
         policycoreutils minicom libxml-sax-base-perl libxml-simple-perl bc libc6-dev-i386 \
         lib32ncurses5-dev libx11-dev lib32z-dev libgl1-mesa-dev xsltproc unzip device-tree-compiler \
-        python3 python2 wget xz-utils clang lld
-        # ★ 加这一行，安装 ARM64 交叉链接器
+        python3 python2 wget xz-utils
+        # ARM64 交叉链接器
         apt-get install -y binutils-aarch64-linux-gnu
+        # 添加 LLVM 13 源并安装 Clang 13 + LLD 13
+        apt-get install -y gnupg2 lsb-release
+        wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -
+        echo "deb http://apt.llvm.org/focal/ llvm-toolchain-focal-13 main" >> /etc/apt/sources.list
+        apt-get update
+        apt-get install -y clang-13 lld-13
+
+    - name: Set up Environment
+      run: |
+        # 让系统默认使用 clang-13 / lld-13
+        update-alternatives --install /usr/bin/clang clang /usr/bin/clang-13 100
+        update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-13 100
+        update-alternatives --install /usr/bin/ld.lld ld.lld /usr/bin/lld-13 100
+        echo "CCACHE_DIR=$(pwd)/.ccache" >> $GITHUB_ENV
+        echo "USE_CCACHE=1" >> $GITHUB_ENV
+        ccache -M 5G
 
     - name: Cache Dependencies
       uses: actions/cache@v4
@@ -38,9 +55,9 @@ jobs:
         path: |
           kernel_source
           ~/.ccache
-        key: ${{ runner.os }}-kernel-mt6989-v3-${{ hashFiles('**/Makefile', 'kernel/**') }}
+        key: ${{ runner.os }}-kernel-mt6989-clang13-${{ hashFiles('**/Makefile', 'kernel/**') }}
         restore-keys: |
-          ${{ runner.os }}-kernel-mt6989-v3-
+          ${{ runner.os }}-kernel-mt6989-clang13-
 
     - name: Download Kernel Source (tar.gz)
       run: |
@@ -54,12 +71,6 @@ jobs:
           rm kernel.tar.gz
         fi
 
-    - name: Set up Environment
-      run: |
-        echo "CCACHE_DIR=$(pwd)/.ccache" >> $GITHUB_ENV
-        echo "USE_CCACHE=1" >> $GITHUB_ENV
-        ccache -M 5G
-
     - name: Prepare Kernel Source for Module Build
       working-directory: ./kernel_source
       run: |
@@ -68,14 +79,15 @@ jobs:
         cp -a ../kernel/. drivers/hack/
         grep -q 'source "drivers/hack/Kconfig"' drivers/Kconfig || echo 'source "drivers/hack/Kconfig"' >> drivers/Kconfig
         grep -q 'obj-$(CONFIG_KERNEL_HACK) += hack/' drivers/Makefile || echo 'obj-$(CONFIG_KERNEL_HACK) += hack/' >> drivers/Makefile
-        make O=out ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- gki_defconfig
+        # 使用 clang-13 和 lld-13（环境已设置，直接写 clang / ld.lld 即可）
+        make O=out ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- LD=ld.lld gki_defconfig
         scripts/config --file out/.config --enable CONFIG_KERNEL_HACK
 
     - name: Build Kernel Module
       working-directory: ./kernel_source
       run: |
-        make -j$(nproc --all) O=out ARCH=arm64 CC="ccache clang" CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- modules_prepare
-        make -j$(nproc --all) O=out ARCH=arm64 CC="ccache clang" CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- M=drivers/hack
+        make -j$(nproc --all) O=out ARCH=arm64 CC="ccache clang" CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- LD=ld.lld modules_prepare
+        make -j$(nproc --all) O=out ARCH=arm64 CC="ccache clang" CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- LD=ld.lld M=drivers/hack
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
